@@ -1,1 +1,0 @@
-Główny plik to Piramidy.java, wystarczy odpalić i plik piramids.png powinien zostać utworzony. W razie czego dołączyłem też gotowy obrazek dla danych z zadania.
