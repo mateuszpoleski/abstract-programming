@@ -1,4 +1,3 @@
-//Nie zdążyłem dopisać wyjątków. Chyba też źle zrozumiałem koncepcje, bo wydaje mi się, że dodanie ich do takiej implementacji byłoby trudne.
 #include <cmath>
 #include <iostream>
 #include <iomanip>
@@ -6,8 +5,20 @@
 
 using namespace std;
 
-template <typename T>
-using evaluate_expr = decltype(&T::evaluate);
+class mission_impossible_error : public std::runtime_error 
+{
+    public:
+
+    mission_impossible_error(const char* msg) : std::runtime_error(msg) {}
+};
+
+//
+
+template <typename Functor>
+using evaluate_expr = decltype(&Functor::evaluate);
+
+template <typename Functor, typename ArgType>
+using multiplicative_and_additive_expr = decltype( std::declval<Functor &>() * ( std::declval<ArgType &>() + std::declval<ArgType &>() ) );
 
 //
 
@@ -24,15 +35,15 @@ ArgType functor_val(ArgType function(ArgType), ArgType arg)
 }
 
 template<typename Functor, typename ArgType>
-ArgType functor_val(Functor functor, ArgType arg1, ArgType arg2)
+ArgType functor_val(Functor functor, ArgType* arg)
 {
-    return functor.evaluate(arg1, arg2);
+    return functor.evaluate(arg);
 }
 
 template <typename ArgType>
-ArgType functor_val(ArgType function(ArgType, ArgType), ArgType arg1, ArgType arg2)
+ArgType functor_val(ArgType function(ArgType*), ArgType* arg)
 {
-    return function(arg1, arg2); 
+    return function(arg); 
 }
 
 //
@@ -59,13 +70,15 @@ void bisection_impl(Functor functor, ArgType *min, ArgType *max, double tol)
 {
     ArgType min_x = min[0], min_y = min[1];
     ArgType max_x = max[0], max_y = max[1];
-    ArgType fmin = functor_val(functor, min_x, min_y);
+    ArgType arg[2] = {min_x, min_y};
+    ArgType fmin = functor_val(functor, arg);
     ArgType mid_x, mid_y;
     while (mid_x = (min_x + max_x) / 2,
            mid_y = (min_y + max_y) / 2,
            sqrt((max_y - min_y) * (max_y - min_y) + (max_x - min_x) * (max_x - min_x)) > tol)
     {
-        ArgType fmid = functor_val(functor, mid_x, mid_y);
+        arg[0] = mid_x, arg[1] = mid_y;
+        ArgType fmid = functor_val(functor, arg);
         if (fmid * fmin > 0)
             min_x = mid_x, min_y = mid_y, fmin = fmid;
         else
@@ -76,15 +89,9 @@ void bisection_impl(Functor functor, ArgType *min, ArgType *max, double tol)
 }
 
 //bisekcja dla klasy z metodą evaluate
-template <typename Functor, typename ArgType, typename = evaluate_expr<Functor>>
+template <typename Functor, typename ArgType, evaluate_expr<Functor>* = nullptr >
 void bisection(Functor functor, ArgType min, ArgType max, double tol)
 {    
-    bisection_impl(functor, min, max, tol);
-}
-
-template <typename Functor, typename ArgType, typename = evaluate_expr<Functor>>
-void bisection(Functor functor, ArgType *min, ArgType *max, double tol)
-{
     bisection_impl(functor, min, max, tol);
 }
 
@@ -96,14 +103,14 @@ void bisection(ArgType function(ArgType), ArgType min, ArgType max, double tol)
 }
 
 template <typename ArgType>
-void bisection(ArgType function(ArgType, ArgType), ArgType *min, ArgType *max, double tol)
+void bisection(ArgType function(ArgType*), ArgType *min, ArgType *max, double tol)
 {
     bisection_impl(function, min, max, tol);
 }
 
 //bisekcja dla obiektów z przestrzeni Y
-template <typename Functor, typename ArgType, typename... DummyArgs>
-void bisection(Functor constant, ArgType min, ArgType max, double tol, DummyArgs... SFINAEDummyArgs)
+template <typename Functor, typename ArgType, multiplicative_and_additive_expr<Functor, ArgType>* = nullptr>
+void bisection(Functor constant, ArgType min, ArgType max, double tol)
 {
     if (min > 0 or max < 0)
         cout << "There is no solution" << endl;
@@ -111,8 +118,8 @@ void bisection(Functor constant, ArgType min, ArgType max, double tol, DummyArgs
         cout << "Solution is at point x = 0" << endl;
 }
 
-template <typename Functor, typename ArgType, typename... DummyArgs>
-void bisection(Functor constant, ArgType *A, ArgType *B, double tol, DummyArgs... SFINAEDummyArgs)
+template <typename Functor, typename ArgType, multiplicative_and_additive_expr<Functor, ArgType>* = nullptr>
+void bisection(Functor constant, ArgType *A, ArgType *B, double tol)
 {
     ArgType A_x = A[0], A_y = A[1];
     ArgType B_x = B[0], B_y = B[1];
@@ -130,29 +137,39 @@ void bisection(Functor constant, ArgType *A, ArgType *B, double tol, DummyArgs..
         cout << "There is no solution" << endl;
 }
 
-double g1(double x)
+//exception dla pozostałych
+void bisection(...)
+{
+    throw mission_impossible_error("I don't think so ...");
+}
+
+template<typename T>
+T g1(T x)
 {
     return x * x - 1;
 }
 
-double g2(double x, double y)
+template<typename T>
+T g2(T* x)
 {
-    return x * x + y * y - 4;
+    return x[0] * x[0] + x[1] * x[1] - 4;
 }
 
+template<typename T>
 struct A1
 {
-    double evaluate(double x)
+    T evaluate(T x)
     {
         return x * x - 1;
     }
 };
 
+template<typename T>
 struct A2
 {
-    double evaluate(double x, double y)
+    T evaluate(T* x)
     {
-        return x * x + y * y - 4;
+        return x[0] * x[0] + x[1] * x[1] - 4;
     }
 };
 
@@ -164,8 +181,18 @@ int main()
     bisection(5, -2., 3., 0.1);
     double start2[2] = {0., -5.}, stop2[2] = {5., 0.};
     bisection(5, start2, stop2, 0.1);
-    A1 a1;
-    A2 a2;
+    A1<double> a1;
+    A2<double> a2;
     bisection(a1, 0., 2., 0.001);
     bisection(a2, start, stop, 0.001);
+    bisection(g1, 'f', 'b', 1);
+
+    try 
+    { 
+        bisection("func", 0., 100., 1.) ;
+    }
+    catch ( const runtime_error& error) 
+    {
+        cout << "nice try" << endl;
+    }
 }
